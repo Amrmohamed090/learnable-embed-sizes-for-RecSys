@@ -4,11 +4,11 @@ import pandas as pd
 from datetime import datetime
 from argparse import ArgumentParser
 from tensorboardX import SummaryWriter
-
+import sys
 from models.factorizer import setup_factorizer
 from data_loader.data_loader import setup_generator
 from utils.evaluate import evaluate_fm
-
+import warnings
 
 def setup_args(parser=None):
     """ Set up arguments for the Engine
@@ -61,6 +61,9 @@ class Engine(object):
     """Engine wrapping the training & evaluation
        of adpative regularized maxtirx factorization
     """
+    _global_writer = None  # Class variable for the global writer
+    _param_step = 0  # Class variable to track parameter steps
+
 
     def __init__(self, opt):
         self._opt = opt
@@ -68,6 +71,11 @@ class Engine(object):
         self._sampler = setup_generator(opt)
 
         self._opt['field_dims'] = self._sampler.field_dims
+        self._factorizer = setup_factorizer(opt)
+
+        if Engine._global_writer is None:
+            Engine._global_writer = SummaryWriter(log_dir='{}/parameter_comparison'.format(self._opt['tensorboard']))
+        
 
         self._opt['emb_save_path'] = self._opt['emb_save_path'].format(
             factorizer=self._opt['factorizer'],
@@ -114,8 +122,10 @@ class Engine(object):
     def save_pruned_embedding(self, param, step_idx):
         max_candidate_p = max(self.candidate_p)
         if max_candidate_p == 0:
+
             print("Minimal target parameters achieved, stop pruning.")
-            exit(0)
+            return 0
+
         else:
             if param <= max_candidate_p:
                 embedding = self._factorizer.model.get_embedding()
@@ -139,7 +149,7 @@ class Engine(object):
                 print("*" * 80)
                 print("Save the initial embedding table")
                 print("*" * 80)
-
+        return 1
     def train_an_episode(self, max_steps, episode_idx=''):
         """Train a feature_based recommendation model"""
         assert self.mode in ['partial', 'complete']
@@ -171,7 +181,10 @@ class Engine(object):
                 epoch_idx = int(step_idx / self._sampler.num_batches_train)
                 sparsity, params = self._factorizer.model.calc_sparsity()
                 if not self.retrain:
-                    self.save_pruned_embedding(params, step_idx)
+                    flag = self.save_pruned_embedding(params, step_idx)
+                    if not flag:
+                        return best_test_result
+                    
                 self._writer.add_scalar('train/step_wise/mf_loss', train_mf_loss, step_idx)
                 self._writer.add_scalar('train/step_wise/sparsity', sparsity, step_idx)
 
@@ -224,17 +237,38 @@ class Engine(object):
                     print("*"*80)
 
             flag = test_flag
-            if self.early_stop is not None and flag >= self.early_stop:
+            if self.early_stop is not None and flag >= self.early_stop :
                 print("Early stop training process")
                 print("Best performance on test data: ", best_test_result)
                 print("Best performance on valid data: ", best_valid_result)
                 self._writer.add_text('best_valid_result', str(best_valid_result), 0)
                 self._writer.add_text('best_test_result', str(best_test_result), 0)
-                exit()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    return best_test_result
+    def train_finish(self, best_test_result):
+        Engine._global_writer.add_scalar(
+            'parameter_comparison/best_auc_vs_params', 
+            best_test_result['AUC'][0],
+            Engine._param_step
+        )
+        Engine._param_step += 1  # Increment the step counter
+        Engine._global_writer.flush()
+
+    def __del__(self):
+        if hasattr(self, '_writer'):
+            self._writer.close()
+        if Engine._global_writer is not None:  # Close global writer if exists
+            Engine._global_writer.close()
+
+
+
+
 
     def train(self):
         self.mode = 'complete'
-        self.train_an_episode(self._opt['max_steps'])
+        best_test_result = self.train_an_episode(self._opt['max_steps'])
+        return best_test_result
 
 
 if __name__ == '__main__':

@@ -43,7 +43,7 @@ class AvazuDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         with self.env.begin(write=False) as txn:
             np_array = np.frombuffer(
-                txn.get(struct.pack('>I', index)), dtype=np.uint32).astype(dtype=np.long)
+                txn.get(struct.pack('>I', index)), dtype=np.uint32).astype(dtype=np.int32)
         return np_array[1:], np_array[0]
 
     def __len__(self):
@@ -51,7 +51,7 @@ class AvazuDataset(torch.utils.data.Dataset):
 
     def __build_cache(self, path, cache_path):
         feat_mapper, defaults, field_dims = self.__get_feat_mapper(path)
-        with lmdb.open(cache_path, map_size=int(1e11)) as env:
+        with lmdb.open(cache_path, map_size=int(2e10)) as env:
             with env.begin(write=True) as txn:
                 txn.put(b'field_dims', field_dims.tobytes())
             for buffer in self.__yield_buffer(path, feat_mapper, defaults):

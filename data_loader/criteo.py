@@ -56,7 +56,7 @@ class CriteoDataset(torch.utils.data.Dataset):
             if stream is None:
                 print("None")
                 print(index)
-            np_array = np.frombuffer(stream, dtype=np.uint32).astype(dtype=np.long)
+            np_array = np.frombuffer(stream, dtype=np.uint32).astype(dtype=np.int32)
         if self.category_only:
             return np_array[1 + self.NUM_INT_FEATS:], np_array[0]
         else:

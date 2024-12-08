@@ -18,10 +18,10 @@ class PEPEmbedding(nn.Module):
         init = opt['threshold_init']
         self.retrain = False
         self.mask = None
-
+        
         self.g = torch.sigmoid
         self.s = self.init_threshold(init)
-        self.offsets = np.array((0, *np.cumsum(self.field_dims)[:-1]), dtype=np.long)
+        self.offsets = np.array((0, *np.cumsum(self.field_dims)[:-1]), dtype=np.int32)
 
         self.v = torch.nn.Parameter(torch.rand(self.feature_num, self.latent_dim))
         torch.nn.init.xavier_uniform_(self.v)
